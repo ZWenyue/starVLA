@@ -43,6 +43,10 @@ import torch.distributed as dist
 from starVLA.dataloader.gr00t_lerobot.video import get_all_frames, get_frames_by_timestamps
 
 from starVLA.dataloader.gr00t_lerobot.embodiment_tags import EmbodimentTag
+from starVLA.dataloader.gr00t_lerobot.embodiment_prompt import (
+    clean_frame_instruction,
+    format_embodiment_prompt,
+)
 from starVLA.dataloader.gr00t_lerobot.schema import (
     DatasetMetadata,
     DatasetStatisticalValues,
@@ -639,8 +643,33 @@ class LeRobotSingleDataset(Dataset):
         self.set_transforms_metadata(self.metadata)
         self.set_epoch(0)
 
+        # Structured Embodiment Prompt (optional; see datasets.vla_data.use_embodiment_prompt)
+        def _cfg_truthy(key: str, default: bool = False) -> bool:
+            if self.data_cfg is None:
+                return default
+            val = self.data_cfg.get(key, default)
+            return val not in [False, "False", "false", "0", 0, None]
+
+        self._use_embodiment_prompt = _cfg_truthy("use_embodiment_prompt", False)
+        self._embodiment_prompt_field_dropout = _cfg_truthy("embodiment_prompt_field_dropout", False)
+        self._embodiment_prompt_field_dropout_prob = float(
+            self.data_cfg.get("embodiment_prompt_field_dropout_prob", 0.15)
+            if self.data_cfg is not None
+            else 0.15
+        )
+        self._episode_prompt_fields: dict[int, dict] = (
+            self._load_episode_prompt_fields() if self._use_embodiment_prompt else {}
+        )
+
         if int(os.environ.get("RANK", "0")) == 0:
             print(f"Initialized dataset {self.dataset_name} with {embodiment_tag}")
+            if self._use_embodiment_prompt:
+                print(
+                    f"  Embodiment prompt: enabled "
+                    f"(episodes_with_fields={len(self._episode_prompt_fields)}, "
+                    f"field_dropout={self._embodiment_prompt_field_dropout}, "
+                    f"p={self._embodiment_prompt_field_dropout_prob})"
+                )
 
         # Check if the dataset is valid
         self._check_integrity()
@@ -1321,6 +1350,49 @@ class LeRobotSingleDataset(Dataset):
             df = df.rename(columns={'index': 'task'})  # rename 'index' column to 'task'
             df = df[['task_index', 'task']]  # reorder columns
             return df
+
+    def _load_episode_prompt_fields(self) -> dict[int, dict]:
+        """Load per-episode ``prompt_fields`` from ``meta/episodes.jsonl`` (v2.0)."""
+        if self._lerobot_version != "v2.0":
+            return {}
+        file_path = self.dataset_path / LE_ROBOT_EPISODE_FILENAME
+        if not file_path.exists():
+            return {}
+        out: dict[int, dict] = {}
+        with open(file_path, "r") as f:
+            for line in f:
+                episode = json.loads(line)
+                prompt_fields = episode.get("prompt_fields")
+                if prompt_fields:
+                    out[int(episode["episode_index"])] = prompt_fields
+        return out
+
+    def _build_language(
+        self,
+        frame_language: str,
+        trajectory_id: int | None,
+    ) -> str:
+        """Optionally wrap frame language into a structured embodiment prompt."""
+        if not self._use_embodiment_prompt or trajectory_id is None:
+            return frame_language
+
+        prompt_fields = self._episode_prompt_fields.get(int(trajectory_id))
+        if not prompt_fields:
+            return frame_language
+
+        instruction = clean_frame_instruction(frame_language)
+        if instruction is None:
+            instruction = clean_frame_instruction(prompt_fields.get("instruction"))
+        if instruction is None:
+            return frame_language
+
+        return format_embodiment_prompt(
+            prompt_fields,
+            instruction,
+            field_dropout=self._embodiment_prompt_field_dropout,
+            field_dropout_prob=self._embodiment_prompt_field_dropout_prob,
+        )
+
     def _check_integrity(self):
         """Use the config to check if the keys are valid and detect silent data corruption."""
         ERROR_MSG_HEADER = f"Error occurred in initializing dataset {self.dataset_name}:\n"
@@ -1374,9 +1446,14 @@ class LeRobotSingleDataset(Dataset):
         trajectory_id, base_index = self.all_steps[index]
         raw_data = self.get_step_data(trajectory_id, base_index)
         data = self.transforms(raw_data)
-        return self._pack_sample(data)
+        return self._pack_sample(data, base_index=base_index, trajectory_id=trajectory_id)
 
-    def _pack_sample(self, data: dict) -> dict:
+    def _pack_sample(
+        self,
+        data: dict,
+        base_index: int | None = None,
+        trajectory_id: int | None = None,
+    ) -> dict:
         """Pack transformed modality data into training sample format."""
         step_images = []
         for video_key in self.modality_keys["video"]:
@@ -1384,7 +1461,12 @@ class LeRobotSingleDataset(Dataset):
             image = Image.fromarray(image).resize((224, 224))
             step_images.append(image)
 
-        language = data[self.modality_keys["language"][0]][0]
+        if trajectory_id is None:
+            trajectory_id = self.curr_traj_id
+        language = self._build_language(
+            data[self.modality_keys["language"][0]][0],
+            trajectory_id,
+        )
         action = []
         for action_key in self.modality_keys["action"]:
             action.append(data[action_key])
@@ -1413,7 +1495,52 @@ class LeRobotSingleDataset(Dataset):
                 state = np.concatenate(state, axis=1).astype(np.float16)
                 sample["state"] = state
 
+        if (
+            self.data_cfg is not None
+            and self.data_cfg.get("include_action_mask", False) not in ["False", False]
+            and base_index is not None
+        ):
+            sample["action_mask"] = self._get_action_dim_mask(base_index, action_dim=action.shape[-1])
+
         return sample
+
+    def _get_action_dim_mask(self, base_index: int, action_dim: int) -> np.ndarray:
+        """Load per-dim occupancy mask aligned with action modality slices.
+
+        Reads ``action_dim_mask`` (unified80) from the current trajectory parquet,
+        with fallback to legacy ``observation.state_dim_mask``. Applies the same
+        start/end slices as ``action.*`` keys in ``meta/modality.json``.
+        Falls back to all-True if neither column exists.
+        """
+        preferred_cols = ("action_dim_mask", "observation.state_dim_mask")
+        col = next(
+            (c for c in preferred_cols if self.curr_traj_data is not None and c in self.curr_traj_data.columns),
+            None,
+        )
+        if col is None:
+            return np.ones(action_dim, dtype=bool)
+
+        raw = np.asarray(self.curr_traj_data[col].iloc[base_index], dtype=np.float32).reshape(-1)
+        pieces = []
+        for action_key in self.modality_keys.get("action", []):
+            meta = self.lerobot_modality_meta.get_key_meta(action_key)
+            start = int(meta.start)
+            end = int(meta.end)
+            if end > raw.shape[0]:
+                raise ValueError(
+                    f"action_mask slice [{start}, {end}) exceeds {col} dim {raw.shape[0]} "
+                    f"for key {action_key}"
+                )
+            pieces.append(raw[start:end])
+        if not pieces:
+            return np.ones(action_dim, dtype=bool)
+        mask = np.concatenate(pieces, axis=0) > 0.5
+        if mask.shape[0] != action_dim:
+            raise ValueError(
+                f"action_mask dim {mask.shape[0]} != action dim {action_dim}; "
+                f"check modality.json action slices vs {col}"
+            )
+        return mask.astype(bool)
 
     def get_step_data(self, trajectory_id: int, base_index: int) -> dict:
         """Get the RAW data for a single step in a trajectory. No transforms are applied.
@@ -2383,7 +2510,9 @@ class LeRobotMixtureDataset(Dataset):
                     
                 raw_data = dataset.get_step_data(trajectory_id, step)    
                 data = dataset.transforms(raw_data)
-                sample = dataset._pack_sample(data)
+                sample = dataset._pack_sample(
+                    data, base_index=step, trajectory_id=trajectory_id
+                )
                 
                 return sample
                 
@@ -2617,11 +2746,22 @@ class LeRobotMixtureDataset(Dataset):
                 modality_configs[modality].add(json.dumps(configs))
         merged_metadata["modalities"] = {}
         for modality, configs in modality_configs.items():
-            # Check that all modality configs correspond to the same tag matches
-            assert (
-                len(configs) == 1
-            ), f"Multiple modality configs for modality {modality}: {list(configs)}"
-            merged_metadata["modalities"][modality] = json.loads(configs.pop())
+            # Cross-embodiment / multi-resolution mixes (e.g. unified80) may differ in
+            # video resolution or fps while sharing the same logical camera keys.
+            # Images are resized later via obs_image_size, so keep the first config.
+            if len(configs) != 1:
+                if modality == "video":
+                    print(
+                        f"[WARNING] Multiple video modality configs in mixture; "
+                        f"using the first. configs={list(configs)}"
+                    )
+                    merged_metadata["modalities"][modality] = json.loads(next(iter(configs)))
+                else:
+                    assert (
+                        len(configs) == 1
+                    ), f"Multiple modality configs for modality {modality}: {list(configs)}"
+            else:
+                merged_metadata["modalities"][modality] = json.loads(configs.pop())
 
         return DatasetMetadata.model_validate(merged_metadata)
 

@@ -172,9 +172,12 @@ class Qwen_GR00T(baseframework):
         """ """
         batch_images = [example["image"] for example in examples]  #  [B, [PLT]]
         instructions = [example["lang"] for example in examples]  # [B, str]
-        actions = [example["action"] for example in examples]  # label [B, len, 7]
+        actions = [example["action"] for example in examples]  # label [B, len, action_dim]
 
         state = [example["state"] for example in examples] if "state" in examples[0] else None  # [B, 1, state_dim]
+        action_mask = (
+            [example["action_mask"] for example in examples] if "action_mask" in examples[0] else None
+        )  # [B, action_dim]
 
         # Step 1: QWenVL input format
         qwen_inputs = self.qwen_vl_interface.build_qwenvl_inputs(images=batch_images, instructions=instructions)
@@ -213,9 +216,19 @@ class Qwen_GR00T(baseframework):
                 state = torch.tensor(np.array(state), device=last_hidden.device, dtype=last_hidden.dtype)
                 state_repeated = state.repeat(repeated_diffusion_steps, 1, 1)
 
+            action_mask_repeated = None
+            if action_mask is not None:
+                action_mask_tensor = torch.tensor(
+                    np.array(action_mask), device=last_hidden.device, dtype=torch.bool
+                )  # [B, action_dim]
+                action_mask_repeated = action_mask_tensor.repeat(repeated_diffusion_steps, 1)
+
             action_loss = self.action_model(
-                last_hidden_repeated, actions_target_repeated, state_repeated,
+                last_hidden_repeated,
+                actions_target_repeated,
+                state_repeated,
                 encoder_attention_mask=backbone_attention_mask,
+                action_mask=action_mask_repeated,
             )  # (B, chunk_len, action_dim)
 
         return {"action_loss": action_loss}

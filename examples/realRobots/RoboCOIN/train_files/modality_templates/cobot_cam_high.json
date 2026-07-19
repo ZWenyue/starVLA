@@ -1,0 +1,16 @@
+{
+    "action": {
+        "unified": {"start": 0, "end": 80, "original_key": "action"}
+    },
+    "state": {
+        "unified": {"start": 0, "end": 80, "original_key": "observation.state"}
+    },
+    "video": {
+        "view0": {"original_key": "observation.images.cam_high_rgb"},
+        "view1": {"original_key": "observation.images.cam_left_wrist_rgb"},
+        "view2": {"original_key": "observation.images.cam_right_wrist_rgb"}
+    },
+    "annotation": {
+        "human.action.task_description": {"original_key": "task_index"}
+    }
+}

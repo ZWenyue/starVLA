@@ -310,11 +310,17 @@ class FlowmatchingActionHead(nn.Module):
         return BatchFeature(data=batch)
 
     def forward(
-        self, vl_embs: torch.Tensor, actions: torch.Tensor, state: torch.Tensor = None, encoder_attention_mask=None
+        self,
+        vl_embs: torch.Tensor,
+        actions: torch.Tensor,
+        state: torch.Tensor = None,
+        encoder_attention_mask=None,
+        action_mask: torch.Tensor = None,
     ):
         """
         vl_embs: shape (B, seq_length, feature_dim)
         actions: shape (B, action_horizon, action_dim)
+        action_mask: optional (B, action_dim) bool — True = active dim (e.g. unified80 mask)
         """
         device = vl_embs.device
 
@@ -359,7 +365,15 @@ class FlowmatchingActionHead(nn.Module):
         pred_actions = pred[:, -actions.shape[1] :]
 
         # Slice out only the action portion of pred and target.
-        loss = ((pred_actions - velocity) ** 2).mean()
+        squared_diff = (pred_actions - velocity) ** 2
+        if action_mask is not None:
+            # action_mask: [B, action_dim] -> [B, T, action_dim]
+            mask = action_mask.to(device=squared_diff.device, dtype=squared_diff.dtype)
+            if mask.ndim == 2:
+                mask = mask.unsqueeze(1).expand_as(squared_diff)
+            loss = (squared_diff * mask).sum() / (mask.sum() + 1e-8)
+        else:
+            loss = squared_diff.mean()
         return loss
 
     @torch.no_grad()

@@ -57,6 +57,16 @@ def merge_config_overrides(model_config: dict, config_overrides: Sequence[str] |
         raise ValueError(f"Failed to parse config_overrides={overrides!r}: {exc}") from exc
 
 
+def _try_import_framework(module_path: str) -> None:
+    """Import one framework module; skip optional deps that are unavailable."""
+    try:
+        importlib.import_module(module_path)
+    except Exception as exc:
+        # One broken optional framework (e.g. PI0 + transformers API drift) must not
+        # block building an unrelated framework such as QwenGR00T.
+        logger.warning(f"Skipping framework import `{module_path}`: {type(exc).__name__}: {exc}")
+
+
 def _auto_import_framework_modules() -> None:
     global _FRAMEWORKS_IMPORTED
     if _FRAMEWORKS_IMPORTED:
@@ -75,9 +85,9 @@ def _auto_import_framework_modules() -> None:
             for _, sub_name, _ in pkgutil.iter_modules([str(sub_dir)]):
                 if sub_name.startswith("_"):
                     continue
-                importlib.import_module(f"starVLA.model.framework.{module_name}.{sub_name}")
+                _try_import_framework(f"starVLA.model.framework.{module_name}.{sub_name}")
         else:
-            importlib.import_module(f"starVLA.model.framework.{module_name}")
+            _try_import_framework(f"starVLA.model.framework.{module_name}")
 
     _FRAMEWORKS_IMPORTED = True
 

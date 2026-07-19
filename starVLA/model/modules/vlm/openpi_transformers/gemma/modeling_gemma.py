@@ -39,8 +39,18 @@ from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
 from transformers.utils import TransformersKwargs, auto_docstring, can_return_tuple
 from transformers.utils.deprecation import deprecate_kwarg
-from transformers.utils.generic import check_model_inputs
 from .configuration_gemma import GemmaConfig
+
+# transformers 5.x removed check_model_inputs (split into merge_with_config_defaults / capture_outputs).
+try:
+    from transformers.utils.generic import check_model_inputs
+except ImportError:  # pragma: no cover
+    try:
+        from transformers.utils.generic import merge_with_config_defaults as check_model_inputs
+    except ImportError:
+
+        def check_model_inputs(func):
+            return func
 
 
 class GemmaRMSNorm(nn.Module):
