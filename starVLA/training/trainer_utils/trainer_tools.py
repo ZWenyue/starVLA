@@ -296,9 +296,41 @@ class TrainerUtils:
                     print(f"❌ cannot find module path: {path}")
         else:  # full load
             try:
-                model.load_state_dict(checkpoint, strict=False)
+                # Some checkpoints wrap weights; unwrap common containers.
+                if isinstance(checkpoint, dict) and "state_dict" in checkpoint and not any(
+                    k.startswith("qwen") or k.startswith("action") for k in checkpoint
+                ):
+                    checkpoint = checkpoint["state_dict"]
+
+                # Skip unexpected / shape-mismatched keys so cross-embodiment
+                # finetune works (e.g. unified80 action_dim=80 → Robotwin 14).
+                model_sd = model.state_dict()
+                filtered = {}
+                skipped_shape = []
+                for key, value in checkpoint.items():
+                    if key not in model_sd:
+                        continue
+                    if hasattr(value, "shape") and tuple(value.shape) != tuple(model_sd[key].shape):
+                        skipped_shape.append(
+                            f"{key}: ckpt{tuple(value.shape)} -> model{tuple(model_sd[key].shape)}"
+                        )
+                        continue
+                    filtered[key] = value
+
+                incompatible = model.load_state_dict(filtered, strict=False)
                 if _dist_rank() == 0:
-                    print("✅ loaded <full_model> model parameters")
+                    print(
+                        f"✅ loaded <full_model> parameters "
+                        f"({len(filtered)}/{len(checkpoint)} tensors from checkpoint)"
+                    )
+                    if skipped_shape:
+                        preview = "; ".join(skipped_shape[:8])
+                        more = f" ... (+{len(skipped_shape) - 8} more)" if len(skipped_shape) > 8 else ""
+                        print(f"⚠️ skipped shape-mismatched keys ({len(skipped_shape)}): {preview}{more}")
+                    if incompatible.missing_keys:
+                        print(f"⚠️ missing keys after load: {len(incompatible.missing_keys)}")
+                    if incompatible.unexpected_keys:
+                        print(f"⚠️ unexpected keys after load: {len(incompatible.unexpected_keys)}")
                 loaded_modules = ["<full_model>"]
             except Exception as e:
                 raise RuntimeError(f"❌ loading full model failed: {e}")

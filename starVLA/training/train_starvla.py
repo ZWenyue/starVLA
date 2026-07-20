@@ -236,6 +236,19 @@ class VLATrainer(TrainerUtils):
             self.completed_steps = 0
 
         if pretrained_checkpoint:
+            # Allow passing a checkpoints/ directory; resolve to latest steps_* file.
+            if os.path.isdir(pretrained_checkpoint):
+                latest_ckpt, ckpt_steps = self._get_latest_checkpoint(pretrained_checkpoint)
+                if latest_ckpt is None:
+                    raise FileNotFoundError(
+                        f"No steps_*_pytorch_model.pt (or .safetensors) under {pretrained_checkpoint}"
+                    )
+                logger.info(
+                    f"Resolved pretrained checkpoint directory to latest file "
+                    f"(pretrain step={ckpt_steps}): {latest_ckpt}"
+                )
+                pretrained_checkpoint = latest_ckpt
+
             reload_modules = getattr(self.config.trainer, "reload_modules", None)
             self.model = self.load_pretrained_backbones(self.model, pretrained_checkpoint, reload_modules=reload_modules)
             self.completed_steps = 0
