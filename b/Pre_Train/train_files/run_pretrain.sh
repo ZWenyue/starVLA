@@ -15,13 +15,13 @@ export NCCL_TIMEOUT=${NCCL_TIMEOUT:-1000}
 Framework_name=QwenGR00T
 freeze_module_list=''
 # Must contain "Qwen3.5"; needs transformers>=5.2
-base_vlm=playground/Pretrained_models/Qwen3.5-4B
+base_vlm=playground/Pretrained_models/Qwen3.5-0.8B
 # Registry + canonical yaml live under examples/ (auto-discovered)
 config_yaml=./examples/realRobots/RoboCOIN/train_files/starvla_cotrain_robocoin_abs.yaml
-data_root_dir=/mnt/r/DATA/pre_train_v1/unified_80_new
+data_root_dir=/mnt/r/DATA/pre_train_v1/pad80
 data_mix=unified80_pretrain
 run_root_dir=./results/Checkpoints
-run_id=0719_${data_mix}_qwen35_gr00t_fixed
+run_id=0727_${data_mix}_qwen35_08b_gr00t_pad80_pretrain
 num_processes=${NUM_PROCESSES:-8}
 # === End of environment variable configuration ===
 ###########################################################################################
@@ -64,7 +64,8 @@ accelerate launch \
   --datasets.vla_data.use_embodiment_prompt true \
   --datasets.vla_data.embodiment_prompt_field_dropout true \
   --datasets.vla_data.embodiment_prompt_field_dropout_prob 0.15 \
-  --datasets.vla_data.per_device_batch_size 16 \
+  --datasets.vla_data.per_device_batch_size 32 \
+  --datasets.vla_data.num_workers 16 \
   --trainer.freeze_modules "${freeze_module_list}" \
   --trainer.max_train_steps 20000 \
   --trainer.save_interval 5000 \

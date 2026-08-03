@@ -83,4 +83,8 @@ DATASET_NAMED_MIXTURES = {
         ("Handle_Plates_20250619_001", 1.0, "unified80_50"),
         ("Organize_Refrigerator_Items0250703_002", 1.0, "unified80_50"),
     ],
+    # Robotwin task converted to unified80 layout (post-train)
+    "stack_bowls_three": [
+        ("stack_bowls_three", 1.0, "unified80_50"),
+    ],
 }

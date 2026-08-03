@@ -11,3 +11,22 @@ port: 5694
 unnorm_key: "new_embodiment"
 action_mode: "abs"
 normalization_mode: "min_max"  # options: min_max, q99
+
+# unified80 ALOHA post-train (0720_stack_bowls_three_qwen35_gr00t)
+# auto → unified80_aloha when training data_mix looks like unified80 / stack_bowls_*
+action_layout: "unified80_aloha"
+include_state: true
+use_embodiment_prompt: true
+embodiment: "aloha"
+camera_view_direction: "opposite side"
+fps: 15
+# Conditioned episode length bin (same meaning as training prompt_fields.speed)
+speed: 500
+# Client-only: execute first N steps of the model chunk, then replan.
+# Model still predicts server action_chunk_size (e.g. 50); null = use full chunk.
+# Use < model chunk (e.g. 30 when model=50) so action_ensemble can overlap.
+execution_horizon: 30
+# Temporal ensemble across overlapping chunks (smooths replan seams / jitter).
+action_ensemble: true
+action_ensemble_horizon: 3
+adaptive_ensemble_alpha: 0.1

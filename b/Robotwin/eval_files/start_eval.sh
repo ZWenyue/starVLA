@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export STARVLA_PYTHON="${STARVLA_PYTHON:-/mnt/r/share/zwy/conda/envs/starVLA/bin/python}"
+export ROBOTWIN_PYTHON="${ROBOTWIN_PYTHON:-/mnt/r/share/zwy/conda/envs/RoboTwin/bin/python}"
+export ROBOTWIN_PATH="${ROBOTWIN_PATH:-/mnt/r/share/zwy/Projects/RoboTwin}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 ROBOTWIN_ALL_TASKS=(
@@ -482,10 +486,22 @@ check_port_detection
 
 prepare_runtime_dependencies
 
+# Resolve ckpt / log paths to absolute so subshells that `cd` into SCRIPT_DIR
+# (and tee/redirection) still write to the intended location.
+if [[ "${CKPT_PATH}" != /* ]]; then
+    CKPT_PATH="$(cd "$(dirname "${CKPT_PATH}")" && pwd)/$(basename "${CKPT_PATH}")"
+fi
 ckpt_name="$(basename "${CKPT_PATH}")"
 ckpt_stem="${ckpt_name%.*}"
 timestamp="$(date +%Y%m%d_%H%M%S)"
-LOG_DIR="${ROBOTWIN_LOG_ROOT:-$(dirname "${CKPT_PATH}")/robotwin_eval_logs/${POLICY_NAME}_${TASK_CONFIG}_${ckpt_stem}_${timestamp}}"
+if [[ -n "${ROBOTWIN_LOG_ROOT:-}" ]]; then
+    LOG_DIR="${ROBOTWIN_LOG_ROOT}"
+else
+    LOG_DIR="$(dirname "${CKPT_PATH}")/robotwin_eval_logs/${POLICY_NAME}_${TASK_CONFIG}_${ckpt_stem}_${timestamp}"
+fi
+if [[ "${LOG_DIR}" != /* ]]; then
+    LOG_DIR="$(pwd)/${LOG_DIR}"
+fi
 mkdir -p "${LOG_DIR}"
 
 next_port="${BASE_PORT}"

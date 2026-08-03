@@ -294,5 +294,8 @@ DATASET_NAMED_MIXTURES = {
     ],
     "robotwin_task1": [("adjust_bottle", 1.0, "robotwin")],
     "robotwin_task2": [("place_a2b_left", 1.0, "robotwin"), ("place_a2b_right", 1.0, "robotwin")],
+    # Native 14-D Agilex (do not reuse "stack_bowls_three" — that name is claimed by unified80 registries).
+    # Use robotwin50 so action_indices=50 matches framework.action_model.action_horizon.
+    "stack_bowls_three_14d": [("stack_bowls_three", 1.0, "robotwin50")],
     "arx_x5": [("arx_x5", 1.0, "arx_x5")],
 }
