@@ -354,6 +354,10 @@ DATASET_NAMED_MIXTURES = {
         ("place_a2b_left", 1.0, "robotwin"),
         ("place_a2b_right", 1.0, "robotwin"),
     ],
+    # Single-task under flat RoboTwin-Clean/<task> (action_horizon=50)
+    "robotwin_stack_bowls_three_50": [
+        ("stack_bowls_three", 1.0, "robotwin50"),
+    ],
 
     "multi_robot": [
         ("LEROBOT_LIBERO_DATA/libero_10_no_noops_1.0.0_lerobot", 1.0, "libero_franka"),

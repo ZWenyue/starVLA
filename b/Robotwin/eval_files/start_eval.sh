@@ -140,8 +140,8 @@ Examples:
 
 Environment variables (lower priority than flags):
   ROBOTWIN_PATH              Path to the RoboTwin repository
-  ROBOTWIN_STARVLA_ENV       Conda env name for the policy server (default: starvla)
-  ROBOTWIN_ENV               Conda env name for RoboTwin eval (default: robotwin)
+  ROBOTWIN_STARVLA_ENV       Conda env name for the policy server (default: starVLA)
+  ROBOTWIN_ENV               Conda env name for RoboTwin eval (default: RoboTwin)
   STARVLA_PYTHON             Explicit python path for starvla (skips conda env lookup)
   ROBOTWIN_PYTHON            Explicit python path for robotwin (skips conda env lookup)
 EOF
@@ -204,8 +204,13 @@ check_port_detection() {
 wait_for_server() {
     local port="$1"
     local timeout_s="${2:-600}"
+    local server_pid="${3:-}"
     local elapsed=0
     while (( elapsed < timeout_s )); do
+        if [[ -n "${server_pid}" ]] && ! kill -0 "${server_pid}" 2>/dev/null; then
+            echo "[ERROR] Policy server process exited before becoming ready (pid=${server_pid})." >&2
+            return 1
+        fi
         if port_in_use "${port}"; then
             return 0
         fi
@@ -376,7 +381,7 @@ launch_task_in_slot() {
         bash "${SCRIPT_DIR}/run_policy_server.sh" "${CKPT_PATH}" "${gpu_id}" "${port}" > "${server_log}" 2>&1 &
         server_pid=$!
 
-        if ! wait_for_server "${port}" "${ROBOTWIN_SERVER_TIMEOUT:-600}"; then
+        if ! wait_for_server "${port}" "${ROBOTWIN_SERVER_TIMEOUT:-600}" "${server_pid}"; then
             echo "[ERROR] Policy server failed to become ready for task=${task_name} on port=${port}. See ${server_log}" >&2
             exit 1
         fi
@@ -457,8 +462,8 @@ if ${opt_install}; then
     ROBOTWIN_AUTO_INSTALL_DEPS=1
 fi
 
-STARVLA_PYTHON="$(resolve_python "${STARVLA_PYTHON:-}" "${ROBOTWIN_STARVLA_ENV:-starvla}")"
-ROBOTWIN_PYTHON="$(resolve_python "${ROBOTWIN_PYTHON:-}" "${ROBOTWIN_ENV:-robotwin}")"
+STARVLA_PYTHON="$(resolve_python "${STARVLA_PYTHON:-}" "${ROBOTWIN_STARVLA_ENV:-starVLA}")"
+ROBOTWIN_PYTHON="$(resolve_python "${ROBOTWIN_PYTHON:-}" "${ROBOTWIN_ENV:-RoboTwin}")"
 export STARVLA_PYTHON ROBOTWIN_PYTHON
 
 echo "[INFO] starvla python: ${STARVLA_PYTHON}"

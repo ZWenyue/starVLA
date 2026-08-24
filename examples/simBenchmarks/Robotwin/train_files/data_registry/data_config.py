@@ -295,4 +295,8 @@ DATASET_NAMED_MIXTURES = {
     "robotwin_task1": [("adjust_bottle", 1.0, "robotwin")],
     "robotwin_task2": [("place_a2b_left", 1.0, "robotwin"), ("place_a2b_right", 1.0, "robotwin")],
     "arx_x5": [("arx_x5", 1.0, "arx_x5")],
+    # unified80-converted Robotwin post-train (requires unified80_50 from RoboCOIN registry).
+    "stack_bowls_three_unified80": [
+        ("stack_bowls_three", 1.0, "unified80_50"),
+    ],
 }

@@ -119,8 +119,12 @@ class PolicyServerWrapper:
     def _get_processor(self, unnorm_key: Optional[str]) -> PolicyNormProcessor:
         cache_key = unnorm_key if unnorm_key is not None else "__default__"
         if cache_key not in self._norm_processors:
+            # Pass the (possibly overridden) model cfg so data_mix / paths from
+            # --config_override affect un-normalization, not only model build.
             self._norm_processors[cache_key] = PolicyNormProcessor(
-                self._ckpt_path, unnorm_key=unnorm_key
+                self._ckpt_path,
+                unnorm_key=unnorm_key,
+                model_cfg=self._model_cfg,
             )
         return self._norm_processors[cache_key]
 

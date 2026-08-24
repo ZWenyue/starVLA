@@ -4,7 +4,8 @@ cd "$(dirname "$0")/../../.."   # repo root (b/Pre_Train/train_files)
 
 # This host has no bond0/InfiniBand; use the available Ethernet NIC and disable IB.
 # Override NCCL_SOCKET_IFNAME / set NCCL_IB_DISABLE=0 on clusters that do have IB.
-export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-enp0s19}
+# Default ens3 (GCP); was enp0s19 on another host — wrong IFNAME → NCCL "no socket interface found".
+export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-ens3}
 export NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-1}
 export NCCL_BLOCKING_WAIT=1
 export NCCL_ASYNC_ERROR_HANDLING=1

@@ -9,7 +9,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 
-ROBOTWIN_PATH="${ROBOTWIN_PATH:-/mnt/data/gaoning/code_repos/RoboTwin}"
+ROBOTWIN_PATH="${ROBOTWIN_PATH:-/home/luogang/share/zwy/Projects/RoboTwin}"
 if [[ ! -d "${ROBOTWIN_PATH}" ]]; then
     echo "ROBOTWIN_PATH does not exist: ${ROBOTWIN_PATH}" >&2
     exit 1
@@ -52,6 +52,10 @@ policy_host="${8:-${ROBOTWIN_POLICY_HOST:-127.0.0.1}}"
 robotwin_python="${ROBOTWIN_PYTHON:-python}"
 deploy_policy_template="${DEPLOY_POLICY_TEMPLATE_PATH:-${SCRIPT_DIR}/deploy_policy.yml}"
 
+if [[ "${robotwin_python}" == */* ]]; then
+    export PATH="$(dirname "${robotwin_python}"):${PATH}"
+fi
+
 if [[ ! -f "${deploy_policy_template}" ]]; then
     echo "Deploy policy template does not exist: ${deploy_policy_template}" >&2
     exit 1
@@ -77,6 +81,10 @@ STARVLA_PATH="${REPO_ROOT}"
 export PYTHONPATH="${ROBOTWIN_PATH}:${PYTHONPATH:-}"
 export PYTHONPATH="${STARVLA_PATH}:${PYTHONPATH}"
 export PYTHONPATH="${EVAL_FILES_PATH}:${PYTHONPATH}"
+# Optional extra client modules (e.g. b/Robotwin/unified_80_eval)
+if [[ -n "${ROBOTWIN_EXTRA_POLICY_PATH:-}" ]]; then
+    export PYTHONPATH="${ROBOTWIN_EXTRA_POLICY_PATH}:${PYTHONPATH}"
+fi
 
 cd "${ROBOTWIN_PATH}"
 

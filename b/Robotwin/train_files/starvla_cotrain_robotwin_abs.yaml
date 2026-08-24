@@ -56,8 +56,8 @@ datasets:
   vla_data:
     dataset_py: lerobot_datasets
     include_state: true
-    data_root_dir: playground/Datasets/RoboTwin
-    data_mix: robotwin_all_50
+    data_root_dir: /home/luogang/share/zwy/Projects/DATA/RoboTwin-Clean
+    data_mix: robotwin_stack_bowls_three_50
     action_type: abs_qpos
     action_mode: abs
     sequential_step_sampling: false
@@ -83,7 +83,7 @@ trainer:
     vla: 1.0
     vlm: 0.1
   # Directory or file both OK. Directory → latest steps_* under it.
-  pretrained_checkpoint: ./results/Checkpoints/0719_unified80_pretrain_qwen35_gr00t_fixed/checkpoints
+  # pretrained_checkpoint: /home/luogang/share/zwy/CKPT/0717_pad80_pretrain_qwen35_gr00t/checkpoints/steps_20000_pytorch_model.pt
   # Leave empty for full soft-load (shape-mismatched action head keys are skipped).
   # reload_modules: 'qwen_vl_interface'
   max_grad_norm: 1.0

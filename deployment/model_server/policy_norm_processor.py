@@ -235,6 +235,64 @@ def _build_dataset_metadata(
     )
 
 
+def _action_stats_dim(stats_for_key: Dict[str, Any]) -> Optional[int]:
+    """Return length of combined action stats array, if present."""
+    action = stats_for_key.get("action") or {}
+    for key in ("mean", "min", "max", "q01", "q99", "std"):
+        arr = action.get(key)
+        if isinstance(arr, (list, tuple)):
+            return len(arr)
+    return None
+
+
+def _expected_action_dim(data_config: Any, stats_for_key: Dict[str, Any]) -> int:
+    """Sum of per-key action dims for ``data_config`` given stats."""
+    action_keys = list(data_config.action_keys)
+    dims = _infer_key_dims(data_config, stats_for_key, action_keys, "action")
+    return int(sum(dims[k] for k in action_keys))
+
+
+def _maybe_remap_unified80_robot_type(
+    robot_type: str,
+    cfg: dict,
+    stats_for_key: Dict[str, Any],
+) -> str:
+    """If mix resolved to a 14-D Robotwin config but stats/ckpt are 80-D, use unified80.
+
+    Older unified80 Robotwin post-train runs saved ``data_mix: stack_bowls_three``
+    (native Robotwin registry → 14-D Agilex keys) while training with
+    ``action_dim: 80`` and 80-D ``dataset_statistics.json``. Without this remap,
+    ``unapply_actions`` fails with dim mismatch.
+    """
+    stats_dim = _action_stats_dim(stats_for_key)
+    action_dim_cfg = (
+        cfg.get("framework", {}).get("action_model", {}).get("action_dim")
+        if isinstance(cfg, dict)
+        else None
+    )
+    if stats_dim != 80 and action_dim_cfg != 80:
+        return robot_type
+    if robot_type not in ROBOT_TYPE_CONFIG_MAP:
+        return robot_type
+    expected = _expected_action_dim(ROBOT_TYPE_CONFIG_MAP[robot_type], stats_for_key)
+    if expected == 80:
+        return robot_type
+    for candidate in ("unified80_50", "unified80"):
+        if candidate not in ROBOT_TYPE_CONFIG_MAP:
+            continue
+        cand_dim = _expected_action_dim(ROBOT_TYPE_CONFIG_MAP[candidate], stats_for_key)
+        if cand_dim == 80 or (stats_dim == 80 and cand_dim == stats_dim):
+            logger.warning(
+                "PolicyNormProcessor: data_mix resolved robot_type=%r (action_dim=%s) "
+                "but checkpoint stats/config are 80-D; remapping to %r for un-normalization.",
+                robot_type,
+                expected,
+                candidate,
+            )
+            return candidate
+    return robot_type
+
+
 class PolicyNormProcessor:
     """Server-side normalization helper backed by training-time transforms.
 
@@ -246,11 +304,20 @@ class PolicyNormProcessor:
             ``config.yaml`` and ``dataset_statistics.json`` two dirs up).
         unnorm_key: Which top-level key in ``dataset_statistics.json`` to use.
             ``None`` → auto-pick the only key.
+        model_cfg: Optional already-merged config dict (e.g. with server
+            ``--config_override``). When omitted, config is read from the
+            checkpoint sidecar ``config.yaml``.
     """
 
-    def __init__(self, ckpt_path: str, unnorm_key: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        ckpt_path: str,
+        unnorm_key: Optional[str] = None,
+        model_cfg: Optional[dict] = None,
+    ) -> None:
         self._ckpt_path = str(ckpt_path)
-        cfg, norm_stats = read_mode_config(self._ckpt_path)
+        disk_cfg, norm_stats = read_mode_config(self._ckpt_path)
+        cfg = model_cfg if model_cfg is not None else disk_cfg
         self._model_cfg = cfg
         self._norm_stats = norm_stats
 
@@ -274,6 +341,17 @@ class PolicyNormProcessor:
                 f"(available: {sorted(ROBOT_TYPE_CONFIG_MAP.keys())}). "
                 "Make sure the example's data_registry/data_config.py is importable."
             )
+
+        # Finalize unnorm_key before dim-based remapping (needs stats).
+        if self._unnorm_key is None:
+            raise ValueError(
+                f"Multiple unnorm_keys in dataset_statistics.json: "
+                f"{list(norm_stats.keys())}. Pass unnorm_key explicitly."
+            )
+        unnorm_key = self._unnorm_key
+        stats_for_unnorm = norm_stats[unnorm_key]
+        robot_type = _maybe_remap_unified80_robot_type(robot_type, cfg, stats_for_unnorm)
+
         self._data_config = ROBOT_TYPE_CONFIG_MAP[robot_type]
         self._action_keys: List[str] = list(self._data_config.action_keys)
         self._state_keys: List[str] = list(getattr(self._data_config, "state_keys", []))
@@ -284,16 +362,7 @@ class PolicyNormProcessor:
             transform = ComposedModalityTransform(transforms=[transform])
         self._transform = transform
 
-        # 3) Pick the requested unnorm_key (finalize; error if still None here).
-        if self._unnorm_key is None:
-            raise ValueError(
-                f"Multiple unnorm_keys in dataset_statistics.json: "
-                f"{list(norm_stats.keys())}. Pass unnorm_key explicitly."
-            )
-        unnorm_key = self._unnorm_key
-
         # 4) Resolve per-key dims (handles multi-d action/state keys).
-        stats_for_unnorm = norm_stats[unnorm_key]
         self._action_key_dims: Dict[str, int] = _infer_key_dims(
             self._data_config, stats_for_unnorm, self._action_keys, "action"
         )

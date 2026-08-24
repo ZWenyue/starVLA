@@ -1,0 +1,33 @@
+policy_name: unified80_robotwin_interface
+task_name: null
+task_config: null
+ckpt_setting: null
+seed: null
+instruction_type: unseen
+
+# StarVLA Client Parameters
+host: "127.0.0.1"
+port: 5694
+unnorm_key: "new_embodiment"
+action_mode: "abs"
+normalization_mode: "min_max"  # options: min_max, q99
+
+# unified80 ALOHA layout
+action_layout: "unified80_aloha"
+
+# Match training when the ckpt used include_state / embodiment prompt.
+include_state: true
+use_embodiment_prompt: true
+embodiment: "aloha"
+camera_view_direction: "opposite side"
+fps: 15
+# Conditioned episode length bin (same meaning as training prompt_fields.speed)
+speed: 500
+
+# Client-only: execute first N steps of the model chunk, then replan.
+# null = use full server chunk (open-loop).
+execution_horizon: null
+# Temporal ensemble across overlapping chunks (needs execution_horizon < model chunk).
+action_ensemble: false
+action_ensemble_horizon: 3
+adaptive_ensemble_alpha: 0.1

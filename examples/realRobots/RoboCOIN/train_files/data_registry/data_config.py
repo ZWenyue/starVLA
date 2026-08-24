@@ -83,4 +83,9 @@ DATASET_NAMED_MIXTURES = {
         ("Handle_Plates_20250619_001", 1.0, "unified80_50"),
         ("Organize_Refrigerator_Items0250703_002", 1.0, "unified80_50"),
     ],
+    # Robotwin ALOHA tasks converted into unified80 layout (post-train / eval).
+    # Use when ckpt config has action_dim=80 + dataset_statistics of length 80.
+    "stack_bowls_three_unified80": [
+        ("stack_bowls_three", 1.0, "unified80_50"),
+    ],
 }
